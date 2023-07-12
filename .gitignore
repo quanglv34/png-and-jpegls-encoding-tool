@@ -1,4 +1,6 @@
-data/*
-materials/rgb8bit.zip
-materials/readme.txt
-output/*
+data/
+materials/
+materials/
+output/
+.vscode/
+.venv/
