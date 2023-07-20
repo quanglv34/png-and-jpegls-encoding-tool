@@ -1,8 +1,17 @@
 import sys
 from enum import Enum
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QIcon, QImage, QImageReader, QMovie, QPixmap, QRegion
+from PyQt6.QtCore import QBuffer, QIODevice, Qt
+from PyQt6.QtGui import (
+    QFont,
+    QIcon,
+    QImage,
+    QImageReader,
+    QMovie,
+    QPixmap,
+    QRegion,
+    QTransform,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -21,6 +30,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from encoder.png_encoder import PNGEncoder
+
+# Disable Image Size limit
+QImageReader.setAllocationLimit(0)
 
 
 class OutputTableColumns(Enum):
@@ -61,6 +75,7 @@ class Window(QWidget):
         self.selectImageFormat.activated.connect(self.switchPage)
 
         self.encodeImageAction = QPushButton("ENCODE")
+        self.encodeImageAction.clicked.connect(self.onEncodeImage)
         self.encodeImageAction.setStyleSheet("color:green; font-weight: 800;")
 
         self.originalImageActions.addWidget(self.openFileDialogAction)
@@ -82,10 +97,10 @@ class Window(QWidget):
         self.originalImageLabel.setText("Please select an image")
         self.originalImageLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.originalImage = QLabel()
-        self.originalImage.setScaledContents(True)
-        # self.originalImage.setSizePolicy(
-        #     QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        # )
+        self.originalImage.setFixedHeight(500)
+        self.originalImage.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.originalImage.setStyleSheet("border: 1px solid black")
         self.originalImage.setAlignment(Qt.AlignmentFlag.AlignCenter)
         originalImageColumn.addWidget(self.originalImageLabel)
@@ -96,9 +111,10 @@ class Window(QWidget):
         self.encodedImageLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.encodedImage = QLabel()
         self.encodedImage.setStyleSheet("border: 1px solid black")
-        # self.encodedImage.setSizePolicy(
-        #     QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        # )
+        self.encodedImage.setFixedHeight(500)
+        self.encodedImage.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.encodedImage.setAlignment(Qt.AlignmentFlag.AlignCenter)
         encodedImageColumn.addWidget(self.encodedImageLabel)
         encodedImageColumn.addWidget(self.encodedImage)
@@ -159,21 +175,29 @@ class Window(QWidget):
     def onOpenFileDialog(self):
         filePath, type = QFileDialog.getOpenFileName(self, "Select an image")
         self.originalPixmap.load(filePath)
-        print("File opened: ", self.originalImage.size())
+        self.updateOriginalImage()
+        self.originalImageLabel.setText(filePath)
+
+    def updateOriginalImage(self):
         scaledPixmap = self.originalPixmap.scaled(
             self.originalImage.size(),
             aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
             transformMode=Qt.TransformationMode.SmoothTransformation,
         )
-        print("Pixmap size: ", scaledPixmap.size())
         self.originalImage.setPixmap(scaledPixmap)
 
     def onRotateLeft(self):
-        print("Scaled size ", self.originalImage.pixmap().size())
-        print("Rotated Left")
+        transform = QTransform().rotate(-90)
+        self.originalPixmap = self.originalPixmap.transformed(transform)
+        self.updateOriginalImage()
 
     def onRotateRight(self):
-        print("Rotate Right")
+        transform = QTransform().rotate(90)
+        self.originalPixmap = self.originalPixmap.transformed(transform)
+        self.updateOriginalImage()
+
+    def onEncodeImage(self):
+        PNGEncoder.encode(self.originalPixmap.toImage())
 
     # def resizeEvent(self, event):
     #     scaledSize = self.originalImage.size()
