@@ -1,3 +1,4 @@
+import queue
 import sys
 from enum import Enum
 
@@ -98,11 +99,11 @@ class Window(QWidget):
         self.originalImageLabel.setText("Please select an image")
         self.originalImageLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.originalImage = QLabel()
+        self.originalImage.setStyleSheet("border: 1px solid black")
         self.originalImage.setFixedHeight(500)
         self.originalImage.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self.originalImage.setStyleSheet("border: 1px solid black")
         self.originalImage.setAlignment(Qt.AlignmentFlag.AlignCenter)
         originalImageColumn.addWidget(self.originalImageLabel)
         originalImageColumn.addWidget(self.originalImage)
@@ -184,6 +185,14 @@ class Window(QWidget):
         )
         self.originalImage.setPixmap(scaledPixmap)
 
+    def updateEncodedImage(self):
+        scaledPixmap = self.encodedPixmap.scaled(
+            self.encodedImage.size(),
+            aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
+            transformMode=Qt.TransformationMode.SmoothTransformation,
+        )
+        self.encodedImage.setPixmap(scaledPixmap)
+
     def onRotateLeft(self):
         transform = QTransform().rotate(-90)
         self.originalPixmap = self.originalPixmap.transformed(transform)
@@ -196,21 +205,35 @@ class Window(QWidget):
 
     def onEncodeImage(self):
         self.encodedImageLabel.setText("Encoding...")
+
+        # Thread to handle return output from image encoding thread
+
+        # Encode image thread
         self.thread = QThread()
         if self.selectImageFormat.currentIndex() == 0:
-            self.worker = PNGEncoderWorker(self.originalPixmap.toImage())
+            info = {"mode": self.modeOptionPNG.currentData()}
+            self.worker = PNGEncoderWorker(self.originalPixmap.toImage(), info)
         else:
-            self.worker = JPEGLSEncoderWorker(self.originalPixmap.toImage())
+            info = {"mode": self.modeOptionJPEGLS.currentData()}
+            print(self.modeOptionJPEGLS.currentData())
+            self.worker = JPEGLSEncoderWorker(self.originalPixmap.toImage(), info)
 
         self.worker.moveToThread(self.thread)
         # Step 5: Connect signals and slots
         self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.handleEncodedImage)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
         # Step 6: Start the thread
         self.thread.start()
-        self.thread.finished.connect(lambda: self.encodedImageLabel.setText("Done."))
+
+    def handleEncodedImage(self, result):
+        info, pixmap = result
+        self.encodedPixmap.swap(pixmap)
+        self.encodedPixmapInfo = info
+        self.updateEncodedImage()
+        self.encodedImageLabel.setText("Done.")
+        self.thread.terminate()
 
 
 app = QApplication(sys.argv)
