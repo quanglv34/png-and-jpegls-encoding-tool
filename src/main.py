@@ -1,7 +1,7 @@
 import sys
 from enum import Enum
 
-from PyQt6.QtCore import QBuffer, QIODevice, Qt
+from PyQt6.QtCore import QBuffer, QIODevice, QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import (
     QFont,
     QIcon,
@@ -31,7 +31,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from encoder.png_encoder import PNGEncoder
+from encoder.jpegls_encoder import JPEGLSEncoderWorker
+from encoder.png_encoder import PNGEncoderWorker
 
 # Disable Image Size limit
 QImageReader.setAllocationLimit(0)
@@ -72,7 +73,7 @@ class Window(QWidget):
 
         self.selectImageFormat = QComboBox()
         self.selectImageFormat.addItems(["Encode to PNG", "Encode to JPEG-LS"])
-        self.selectImageFormat.activated.connect(self.switchPage)
+        self.selectImageFormat.activated.connect(self.onSelectImageFormat)
 
         self.encodeImageAction = QPushButton("ENCODE")
         self.encodeImageAction.clicked.connect(self.onEncodeImage)
@@ -123,33 +124,29 @@ class Window(QWidget):
         self.imagesContainer.addLayout(encodedImageColumn)
         # End of image container
 
-        # layout.addWidget(originalImage, 1, 0)
-
         self.originalPixmap = QPixmap()
         self.encodedPixmap = QPixmap()
 
-        # # pixmap = QPixmap("data/big_tree.ppm")
-        # # pixmap = pixmap.scaled(500, 500, Qt.AspectRatioMode.KeepAspectRatio)
-        # # originalImage.setPixmap(pixmap)
-        # # originalImage.show()
-
         # Create the stacked layout
-        self.stackedLayout = QStackedLayout()
-        layout.addLayout(self.stackedLayout)
+        self.formatOptionsPanels = QStackedLayout()
+        layout.addLayout(self.formatOptionsPanels)
         # Create the first page
-        self.page1 = QWidget()
-        self.page1Layout = QFormLayout()
-        self.page1Layout.addRow("Name:", QLineEdit())
-        self.page1Layout.addRow("Address:", QLineEdit())
-        self.page1.setLayout(self.page1Layout)
-        self.stackedLayout.addWidget(self.page1)
+        self.optionsPanelPNG = QWidget()
+        optionsPanelPNGLayout = QHBoxLayout()
+        self.modeOptionPNG = QComboBox()
+        self.modeOptionPNG.addItems(map(str, range(1, 10)))
+        optionsPanelPNGLayout.addWidget(self.modeOptionPNG)
+        self.optionsPanelPNG.setLayout(optionsPanelPNGLayout)
+        self.formatOptionsPanels.addWidget(self.optionsPanelPNG)
+
         # Create the second page
-        self.page2 = QWidget()
-        self.page2Layout = QFormLayout()
-        self.page2Layout.addRow("Job:", QLineEdit())
-        self.page2Layout.addRow("Department:", QLineEdit())
-        self.page2.setLayout(self.page2Layout)
-        self.stackedLayout.addWidget(self.page2)
+        self.optionsPanelJPEGLS = QWidget()
+        optionsPanelJPEGLSLayout = QHBoxLayout()
+        self.modeOptionJPEGLS = QComboBox()
+        self.modeOptionJPEGLS.addItems(["none", "line", "sample"])
+        optionsPanelJPEGLSLayout.addWidget(self.modeOptionJPEGLS)
+        self.optionsPanelJPEGLS.setLayout(optionsPanelJPEGLSLayout)
+        self.formatOptionsPanels.addWidget(self.optionsPanelJPEGLS)
 
         self.outputTable = QTableWidget()
         self.outputTable.setFixedHeight(200)
@@ -169,8 +166,9 @@ class Window(QWidget):
         self.outputTable.insertRow(0)
         layout.addWidget(self.outputTable)
 
-    def switchPage(self):
-        self.stackedLayout.setCurrentIndex(self.pageCombo.currentIndex())
+    def onSelectImageFormat(self, mode):
+        print("Selected mode ", self.selectImageFormat.currentText())
+        self.formatOptionsPanels.setCurrentIndex(self.selectImageFormat.currentIndex())
 
     def onOpenFileDialog(self):
         filePath, type = QFileDialog.getOpenFileName(self, "Select an image")
@@ -197,26 +195,22 @@ class Window(QWidget):
         self.updateOriginalImage()
 
     def onEncodeImage(self):
-        PNGEncoder.encode(self.originalPixmap.toImage())
+        self.encodedImageLabel.setText("Encoding...")
+        self.thread = QThread()
+        if self.selectImageFormat.currentIndex() == 0:
+            self.worker = PNGEncoderWorker(self.originalPixmap.toImage())
+        else:
+            self.worker = JPEGLSEncoderWorker(self.originalPixmap.toImage())
 
-    # def resizeEvent(self, event):
-    #     scaledSize = self.originalImage.size()
-    #     scaledSize.scale(self.originalImage.size(), Qt.AspectRatioMode.KeepAspectRatio)
-    #     if (
-    #         not self.originalImage.pixmap()
-    #         or scaledSize != self.originalImage.pixmap().size()
-    #     ):
-    #         self.updateLabel()
-
-    # def updateLabel(self):
-    #     print("Original image size ", self.originalImage.size())
-    #     self.originalImage.setPixmap(
-    #         self.originalPixmap.scaled(
-    #             self.originalImage.size(),
-    #             Qt.AspectRatioMode.KeepAspectRatio,
-    #             Qt.TransformationMode.SmoothTransformation,
-    #         )
-    #     )
+        self.worker.moveToThread(self.thread)
+        # Step 5: Connect signals and slots
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        # Step 6: Start the thread
+        self.thread.start()
+        self.thread.finished.connect(lambda: self.encodedImageLabel.setText("Done."))
 
 
 app = QApplication(sys.argv)
