@@ -21,14 +21,19 @@ class JPEGLSEncoderWorker(QObject):
     def __init__(self, pixmap: QImage, info: dict):
         QObject.__init__(self)
         self.pixmap = pixmap
+        self.info = info
 
     def run(self):
         """Long-running task."""
-        self.finished.emit(JPEGLSEncoder.encode(self.pixmap))
+        interleave = self.info["interleave"]
+        info, pixmap = JPEGLSEncoder.encode(self.pixmap, interleave)
+        self.info["configuration"]["interleave"] = interleave
+        self.info.update(info)
+        self.finished.emit((self.info, pixmap))
 
 
 class JPEGLSEncoder:
-    def encode(pixmap: QImage):
+    def encode(pixmap: QImage, interleave):
         pil_im = ImageQt.fromqpixmap(pixmap)
         print("\n---------------------------------------\n")
         print("Đang mã hoá JPEG-LS...")
@@ -38,13 +43,13 @@ class JPEGLSEncoder:
         non_compressed_size = non_compressed_buffer.tell()
         print("Kích thước ảnh trước nén:", non_compressed_size)
 
-        non_compressed_buffer.close()
         compressed_buffer = io.BytesIO()
 
         start = time.time()
-        pil_im.save(compressed_buffer, "JPEG-LS")
+        pil_im.save(compressed_buffer, "JPEG-LS", interleave=interleave)
         end = time.time()
         compressed_size = compressed_buffer.tell()
+        compressed_buffer.close()
         print("Kích thước ảnh sau nén:", compressed_size)
 
         print("Tỉ số nén:", non_compressed_size / compressed_size)
@@ -53,12 +58,14 @@ class JPEGLSEncoder:
         print("\n---------------------------------------\n")
 
         encodedImage = QImage()
-        encodedImage.loadFromData(compressed_buffer.getvalue())
+        encodedImage.loadFromData(non_compressed_buffer.getvalue())
         encodedPixmap = QPixmap()
         encodedPixmap = encodedPixmap.fromImage(encodedImage)
+        non_compressed_buffer.close()
+
         return {
             "non_compressed_size": non_compressed_size,
-            "time": end - start,
+            "time": round(end - start, 4),
             "compressed_size": compressed_size,
-            "compress_ratio": non_compressed_size / compressed_size,
-        }, QPixmap.fromImage(encodedImage)
+            "compress_ratio": round(non_compressed_size / compressed_size, 4),
+        }, encodedPixmap

@@ -18,11 +18,15 @@ class PNGEncoderWorker(QObject):
 
     def run(self):
         """Long-running task."""
-        self.finished.emit(PNGEncoder.encode(self.pixmap))
+        compress_level = self.info["compress_level"]
+        info, pixmap = PNGEncoder.encode(self.pixmap, int(compress_level))
+        self.info["configuration"]["compress_level"] = compress_level
+        self.info.update(info)
+        self.finished.emit((self.info, pixmap))
 
 
 class PNGEncoder:
-    def encode(pixmap: QImage):
+    def encode(pixmap: QImage, compress_level=0):
         pil_im = ImageQt.fromqpixmap(pixmap)
         print("\n---------------------------------------\n")
         print("Đang mã hoá PNG...")
@@ -35,7 +39,7 @@ class PNGEncoder:
         non_compressed_buffer.close()
         compressed_buffer = io.BytesIO()
         start = time.time()
-        pil_im.save(compressed_buffer, "PNG")
+        pil_im.save(compressed_buffer, "PNG", compress_level=compress_level)
         end = time.time()
         compressed_size = compressed_buffer.tell()
         print("Kích thước ảnh sau nén:", compressed_size)
@@ -49,9 +53,10 @@ class PNGEncoder:
         encodedImage.loadFromData(compressed_buffer.getvalue())
         encodedPixmap = QPixmap()
         encodedPixmap = encodedPixmap.fromImage(encodedImage)
+
         return {
             "non_compressed_size": non_compressed_size,
+            "time": round(end - start, 4),
             "compressed_size": compressed_size,
-            "time": end - start,
-            "compress_ratio": non_compressed_size / compressed_size,
+            "compress_ratio": round(non_compressed_size / compressed_size, 4),
         }, encodedPixmap

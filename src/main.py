@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -48,11 +49,14 @@ class OutputTableColumns(Enum):
     ENCODED_TYPE = "Encoded Type"
     INPUT_FILE_PATH = "Input File Path"
     OUTPUT_FILE_PATH = "Output File Path"
+    TIME = "Time"
 
 
 class Window(QWidget):
     def __init__(self):
         super().__init__()
+
+        self.rotation = 0
 
         self.setGeometry(200, 200, 1280, 720)
         self.setWindowTitle("Python Image Compression Tools")
@@ -135,7 +139,7 @@ class Window(QWidget):
         self.optionsPanelPNG = QWidget()
         optionsPanelPNGLayout = QHBoxLayout()
         self.modeOptionPNG = QComboBox()
-        self.modeOptionPNG.addItems(map(str, range(1, 10)))
+        self.modeOptionPNG.addItems(map(str, range(0, 10)))
         optionsPanelPNGLayout.addWidget(self.modeOptionPNG)
         self.optionsPanelPNG.setLayout(optionsPanelPNGLayout)
         self.formatOptionsPanels.addWidget(self.optionsPanelPNG)
@@ -157,14 +161,14 @@ class Window(QWidget):
             OutputTableColumns.ORIGINAL_SIZE.value,
             OutputTableColumns.COMPRESSED_SIZE.value,
             OutputTableColumns.COMPRESSION_RATIO.value,
+            OutputTableColumns.TIME.value,
             OutputTableColumns.CONFIGURATION.value,
-            OutputTableColumns.OUTPUT_FILE_PATH.value,
-            OutputTableColumns.INPUT_FILE_PATH.value,
         ]
         self.outputTable.setColumnCount(len(self.outputTableColumns))
         self.outputTable.setHorizontalHeaderLabels(self.outputTableColumns)
+        header = self.outputTable.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.outputTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.outputTable.insertRow(0)
         layout.addWidget(self.outputTable)
 
     def onSelectImageFormat(self, mode):
@@ -194,11 +198,13 @@ class Window(QWidget):
         self.encodedImage.setPixmap(scaledPixmap)
 
     def onRotateLeft(self):
+        self.rotation = (self.rotation - 90) % 360
         transform = QTransform().rotate(-90)
         self.originalPixmap = self.originalPixmap.transformed(transform)
         self.updateOriginalImage()
 
     def onRotateRight(self):
+        self.rotation = (self.rotation + 90) % 360
         transform = QTransform().rotate(90)
         self.originalPixmap = self.originalPixmap.transformed(transform)
         self.updateOriginalImage()
@@ -211,10 +217,22 @@ class Window(QWidget):
         # Encode image thread
         self.thread = QThread()
         if self.selectImageFormat.currentIndex() == 0:
-            info = {"mode": self.modeOptionPNG.currentData()}
+            info = {
+                "configuration": {
+                    "rotation": self.rotation,
+                },
+                "compress_level": self.modeOptionPNG.currentText(),
+                "format": "PNG",
+            }
             self.worker = PNGEncoderWorker(self.originalPixmap.toImage(), info)
         else:
-            info = {"mode": self.modeOptionJPEGLS.currentData()}
+            info = {
+                "configuration": {
+                    "rotation": self.rotation,
+                },
+                "interleave": self.modeOptionJPEGLS.currentText(),
+                "format": "JPEG-LS",
+            }
             print(self.modeOptionJPEGLS.currentData())
             self.worker = JPEGLSEncoderWorker(self.originalPixmap.toImage(), info)
 
@@ -229,11 +247,23 @@ class Window(QWidget):
 
     def handleEncodedImage(self, result):
         info, pixmap = result
+        print(info)
         self.encodedPixmap.swap(pixmap)
-        self.encodedPixmapInfo = info
         self.updateEncodedImage()
         self.encodedImageLabel.setText("Done.")
         self.thread.terminate()
+        self.outputTable.insertRow(0)
+        self.outputTable.setItem(
+            0, 0, QTableWidgetItem(self.originalImageLabel.text().split("/")[-1])
+        )
+        self.outputTable.setItem(0, 1, QTableWidgetItem(info["format"]))
+        self.outputTable.setItem(
+            0, 2, QTableWidgetItem(str(info["non_compressed_size"]))
+        )
+        self.outputTable.setItem(0, 3, QTableWidgetItem(str(info["compressed_size"])))
+        self.outputTable.setItem(0, 4, QTableWidgetItem(str(info["compress_ratio"])))
+        self.outputTable.setItem(0, 5, QTableWidgetItem(str(info["time"])))
+        self.outputTable.setItem(0, 6, QTableWidgetItem(str(info["configuration"])))
 
 
 app = QApplication(sys.argv)
